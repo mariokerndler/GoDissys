@@ -16,7 +16,7 @@ import (
 // MockNameserverClient is a mock implementation of proto.NameserverClient for testing.
 type MockNameserverClient struct {
 	mu        sync.RWMutex
-	mailboxes map[string]string // username -> mailbox address
+	mailboxes map[string]string // email_address -> mailbox address
 }
 
 func NewMockNameserverClient() *MockNameserverClient {
@@ -28,14 +28,14 @@ func NewMockNameserverClient() *MockNameserverClient {
 func (m *MockNameserverClient) RegisterMailbox(ctx context.Context, in *proto.RegisterMailboxRequest, opts ...grpc.CallOption) (*proto.RegisterMailboxResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.mailboxes[in.GetUsername()] = in.GetMailboxAddress()
+	m.mailboxes[in.GetEmailAddress()] = in.GetMailboxAddress()
 	return &proto.RegisterMailboxResponse{Success: true, Message: "Mock registered"}, nil
 }
 
 func (m *MockNameserverClient) LookupMailbox(ctx context.Context, in *proto.LookupMailboxRequest, opts ...grpc.CallOption) (*proto.LookupMailboxResponse, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	addr, found := m.mailboxes[in.GetUsername()]
+	addr, found := m.mailboxes[in.GetEmailAddress()]
 	return &proto.LookupMailboxResponse{Found: found, MailboxAddress: addr}, nil
 }
 
@@ -86,7 +86,7 @@ func TestTransferServer_SendMail(t *testing.T) {
 	mockNameserver := NewMockNameserverClient()
 	// Register a user with the mock nameserver to point to our mock mailbox
 	mockNameserver.RegisterMailbox(context.Background(), &proto.RegisterMailboxRequest{
-		Username:       "recipient1",
+		EmailAddress:   "recipient1@example.com",
 		MailboxAddress: mailboxAddr,
 	})
 
@@ -118,11 +118,11 @@ func TestTransferServer_SendMail(t *testing.T) {
 	// Test Case 1: Successfully send mail to a registered recipient
 	t.Run("SendMailSuccess", func(t *testing.T) {
 		msg := &proto.MailMessage{
-			Sender:    "senderA",
-			Recipient: "recipient1",
-			Subject:   "Hello Recipient1",
-			Body:      "This is a test email.",
-			Timestamp: time.Now().Unix(),
+			SenderEmail:    "senderA@domain.com",
+			RecipientEmail: "recipient1@example.com",
+			Subject:        "Hello Recipient1",
+			Body:           "This is a test email.",
+			Timestamp:      time.Now().Unix(),
 		}
 		req := &proto.SendMailRequest{Message: msg}
 		resp, err := client.SendMail(context.Background(), req)
@@ -150,11 +150,11 @@ func TestTransferServer_SendMail(t *testing.T) {
 	// Test Case 2: Send mail to an unregistered recipient
 	t.Run("SendMailUnregisteredRecipient", func(t *testing.T) {
 		msg := &proto.MailMessage{
-			Sender:    "senderB",
-			Recipient: "unknownuser",
-			Subject:   "To Unknown",
-			Body:      "This should fail.",
-			Timestamp: time.Now().Unix(),
+			SenderEmail:    "senderB@domain.com",
+			RecipientEmail: "unknownuser@unknown.com",
+			Subject:        "To Unknown",
+			Body:           "This should fail.",
+			Timestamp:      time.Now().Unix(),
 		}
 		req := &proto.SendMailRequest{Message: msg}
 		resp, err := client.SendMail(context.Background(), req)
@@ -164,7 +164,7 @@ func TestTransferServer_SendMail(t *testing.T) {
 		if resp.GetSuccess() {
 			t.Errorf("SendMail expected failure for unknown user, got success")
 		}
-		if resp.GetMessage() != "Recipient 'unknownuser' not found" {
+		if resp.GetMessage() != "Recipient 'unknownuser@unknown.com' not found" {
 			t.Errorf("Expected 'Recipient not found' message, got '%s'", resp.GetMessage())
 		}
 		// Ensure no message was received by the mock mailbox
@@ -175,19 +175,19 @@ func TestTransferServer_SendMail(t *testing.T) {
 		}
 	})
 
-	// Test Case 3: Send mail with empty recipient
-	t.Run("SendMailEmptyRecipient", func(t *testing.T) {
+	// Test Case 3: Send mail with empty recipient email
+	t.Run("SendMailEmptyRecipientEmail", func(t *testing.T) {
 		msg := &proto.MailMessage{
-			Sender:    "senderC",
-			Recipient: "", // Empty recipient
-			Subject:   "Invalid Mail",
-			Body:      "This should cause an error.",
-			Timestamp: time.Now().Unix(),
+			SenderEmail:    "senderC@domain.com",
+			RecipientEmail: "", // Empty recipient email
+			Subject:        "Invalid Mail",
+			Body:           "This should cause an error.",
+			Timestamp:      time.Now().Unix(),
 		}
 		req := &proto.SendMailRequest{Message: msg}
 		_, err := client.SendMail(context.Background(), req)
 		if s, ok := status.FromError(err); !ok || s.Code() != codes.InvalidArgument {
-			t.Errorf("Expected InvalidArgument error for empty recipient, got %v", err)
+			t.Errorf("Expected InvalidArgument error for empty recipient email, got %v", err)
 		}
 	})
 }

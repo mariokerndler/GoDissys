@@ -4,8 +4,10 @@ import (
 	"GoDissys/common"
 	"GoDissys/proto/proto"
 	"context"
+	"fmt"
 	"log"
 	"net"
+	"strings"
 	"sync"
 
 	"google.golang.org/grpc"
@@ -20,55 +22,77 @@ type server struct {
 	// mailboxes maps usernames to their mailbox address (e.g., "localhost:50052")
 	mailboxes map[string]string
 	mu        sync.RWMutex // Mutex to protect the mailboxes map
+
+	// responsibleDomains store the domains this Nameserver is responsible for
+	responsibleDomains map[string]bool
 }
 
 // NewServer creates a new Nameserver instance
-func NewServer() *server {
+func NewServer(domains []string) *server {
+	rd := make(map[string]bool)
+	for _, d := range domains {
+		rd[d] = true
+	}
 	return &server{
-		mailboxes: make(map[string]string),
+		mailboxes:          make(map[string]string),
+		responsibleDomains: rd,
 	}
 }
 
 // StartNameserver starts the gRPC server for the Nameserver
-func StartNameserver() {
+func StartNameserver(domains ...string) {
 	lis, err := net.Listen("tcp", common.NameserverAddr)
 	if err != nil {
 		log.Fatalf("Nameserver failed to listen: %v", err)
 	}
 	s := grpc.NewServer()
-	nameserverService := NewServer()
+	nameserverService := NewServer(domains)
 	proto.RegisterNameserverServer(s, nameserverService)
-	log.Printf("Nameserver listening on %s", common.NameserverAddr)
+	log.Printf("Nameserver listening on %s, responsible for domains: %v", common.NameserverAddr, domains)
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Nameserver failed to server: %v", err)
 	}
 
 }
 
-// RegisterMailbox implements proto.NameserverServer
-// It registers a user's mailbox address with the nameserver
+// RegisterMailbox implements proto.NameserverServer.
+// It registers a user's full email address with their mailbox address,
+// but only if the email's domain is managed by this Nameserver.
 func (s *server) RegisterMailbox(ctx context.Context, req *proto.RegisterMailboxRequest) (*proto.RegisterMailboxResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	username := req.GetUsername()
+	emailAddress := req.GetEmailAddress()
 	mailboxAddr := req.GetMailboxAddress()
 
-	if username == "" || mailboxAddr == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "username and mailbox address cannot be empty")
+	if emailAddress == "" || mailboxAddr == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "email address and mailbox address cannot be empty")
 	}
 
-	if _, exists := s.mailboxes[username]; exists {
-		log.Printf("Nameserver: User '%s' already registered, updating address to '%s'", username, mailboxAddr)
+	// Extract domain from email address
+	parts := strings.Split(emailAddress, "@")
+	if len(parts) != 2 {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid email address format: %s", emailAddress)
+	}
+	domain := parts[1]
+
+	// Check if this Nameserver is responsible for the domain
+	if !s.responsibleDomains[domain] {
+		log.Printf("Nameserver: Registration rejected for '%s'. Domain '%s' is not managed by this Nameserver.", emailAddress, domain)
+		return &proto.RegisterMailboxResponse{
+			Success: false,
+			Message: fmt.Sprintf("Domain '%s' is not managed by this Nameserver.", domain),
+		}, nil
+	}
+
+	if _, exists := s.mailboxes[emailAddress]; exists {
+		log.Printf("Nameserver: Email '%s' already registered, updating address to '%s'", emailAddress, mailboxAddr)
 	} else {
-		log.Printf("Nameserver: Registering user '%s' with mailbox at '%s'", username, mailboxAddr)
+		log.Printf("Nameserver: Registering email '%s' with mailbox at '%s'", emailAddress, mailboxAddr)
 	}
-	s.mailboxes[username] = mailboxAddr
+	s.mailboxes[emailAddress] = mailboxAddr
 
-	return &proto.RegisterMailboxResponse{
-		Success: true,
-		Message: "Mailbox registered successfully",
-	}, nil
+	return &proto.RegisterMailboxResponse{Success: true, Message: "Mailbox registered successfully"}, nil
 }
 
 // LookupMailbox implements proto.NameserverServer
@@ -77,9 +101,9 @@ func (s *server) LookupMailbox(ctx context.Context, req *proto.LookupMailboxRequ
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	username := req.GetUsername()
+	username := req.GetEmailAddress()
 	if username == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "username cannot be empty")
+		return nil, status.Errorf(codes.InvalidArgument, "email address cannot be empty")
 	}
 
 	addr, found := s.mailboxes[username]
@@ -88,6 +112,6 @@ func (s *server) LookupMailbox(ctx context.Context, req *proto.LookupMailboxRequ
 		return &proto.LookupMailboxResponse{Found: false, MailboxAddress: ""}, nil
 	}
 
-	log.Printf("Nameserver: Found mailbox for user '%s' at '%s'", username, addr)
+	log.Printf("Nameserver: Found mailbox for email '%s' at '%s'", username, addr)
 	return &proto.LookupMailboxResponse{Found: true, MailboxAddress: addr}, nil
 }

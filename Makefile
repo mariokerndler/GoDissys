@@ -1,5 +1,5 @@
 # Define the Go application name
-APP_NAME = distributed-mail-system
+APP_NAME = GoDissys
 
 # Define the proto file path
 PROTO_FILE = proto/mail.proto

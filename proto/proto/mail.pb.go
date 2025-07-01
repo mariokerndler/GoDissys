@@ -21,16 +21,16 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// MailMessage represents a simplified email message
+// MailMessage represents a simplified email message.
 type MailMessage struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Sender        string                 `protobuf:"bytes,1,opt,name=sender,proto3" json:"sender,omitempty"`
-	Recipient     string                 `protobuf:"bytes,2,opt,name=recipient,proto3" json:"recipient,omitempty"`
-	Subject       string                 `protobuf:"bytes,3,opt,name=subject,proto3" json:"subject,omitempty"`
-	Body          string                 `protobuf:"bytes,4,opt,name=body,proto3" json:"body,omitempty"`
-	Timestamp     int64                  `protobuf:"varint,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"` // Unix timestamp
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	SenderEmail    string                 `protobuf:"bytes,1,opt,name=sender_email,json=senderEmail,proto3" json:"sender_email,omitempty"`
+	RecipientEmail string                 `protobuf:"bytes,2,opt,name=recipient_email,json=recipientEmail,proto3" json:"recipient_email,omitempty"`
+	Subject        string                 `protobuf:"bytes,3,opt,name=subject,proto3" json:"subject,omitempty"`
+	Body           string                 `protobuf:"bytes,4,opt,name=body,proto3" json:"body,omitempty"`
+	Timestamp      int64                  `protobuf:"varint,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"` // Unix timestamp
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *MailMessage) Reset() {
@@ -63,16 +63,16 @@ func (*MailMessage) Descriptor() ([]byte, []int) {
 	return file_proto_mail_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *MailMessage) GetSender() string {
+func (x *MailMessage) GetSenderEmail() string {
 	if x != nil {
-		return x.Sender
+		return x.SenderEmail
 	}
 	return ""
 }
 
-func (x *MailMessage) GetRecipient() string {
+func (x *MailMessage) GetRecipientEmail() string {
 	if x != nil {
-		return x.Recipient
+		return x.RecipientEmail
 	}
 	return ""
 }
@@ -100,7 +100,7 @@ func (x *MailMessage) GetTimestamp() int64 {
 
 type RegisterMailboxRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	Username       string                 `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
+	EmailAddress   string                 `protobuf:"bytes,1,opt,name=email_address,json=emailAddress,proto3" json:"email_address,omitempty"`
 	MailboxAddress string                 `protobuf:"bytes,2,opt,name=mailbox_address,json=mailboxAddress,proto3" json:"mailbox_address,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -136,9 +136,9 @@ func (*RegisterMailboxRequest) Descriptor() ([]byte, []int) {
 	return file_proto_mail_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *RegisterMailboxRequest) GetUsername() string {
+func (x *RegisterMailboxRequest) GetEmailAddress() string {
 	if x != nil {
-		return x.Username
+		return x.EmailAddress
 	}
 	return ""
 }
@@ -204,7 +204,7 @@ func (x *RegisterMailboxResponse) GetMessage() string {
 
 type LookupMailboxRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Username      string                 `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
+	EmailAddress  string                 `protobuf:"bytes,1,opt,name=email_address,json=emailAddress,proto3" json:"email_address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -239,9 +239,9 @@ func (*LookupMailboxRequest) Descriptor() ([]byte, []int) {
 	return file_proto_mail_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *LookupMailboxRequest) GetUsername() string {
+func (x *LookupMailboxRequest) GetEmailAddress() string {
 	if x != nil {
-		return x.Username
+		return x.EmailAddress
 	}
 	return ""
 }
@@ -396,7 +396,7 @@ func (x *ReceiveMailResponse) GetMessage() string {
 
 type GetMailRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Username      string                 `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
+	EmailAddress  string                 `protobuf:"bytes,1,opt,name=email_address,json=emailAddress,proto3" json:"email_address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -431,9 +431,9 @@ func (*GetMailRequest) Descriptor() ([]byte, []int) {
 	return file_proto_mail_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *GetMailRequest) GetUsername() string {
+func (x *GetMailRequest) GetEmailAddress() string {
 	if x != nil {
-		return x.Username
+		return x.EmailAddress
 	}
 	return ""
 }
@@ -582,21 +582,21 @@ var File_proto_mail_proto protoreflect.FileDescriptor
 
 const file_proto_mail_proto_rawDesc = "" +
 	"\n" +
-	"\x10proto/mail.proto\x12\x04mail\"\x8f\x01\n" +
-	"\vMailMessage\x12\x16\n" +
-	"\x06sender\x18\x01 \x01(\tR\x06sender\x12\x1c\n" +
-	"\trecipient\x18\x02 \x01(\tR\trecipient\x12\x18\n" +
+	"\x10proto/mail.proto\x12\x04mail\"\xa5\x01\n" +
+	"\vMailMessage\x12!\n" +
+	"\fsender_email\x18\x01 \x01(\tR\vsenderEmail\x12'\n" +
+	"\x0frecipient_email\x18\x02 \x01(\tR\x0erecipientEmail\x12\x18\n" +
 	"\asubject\x18\x03 \x01(\tR\asubject\x12\x12\n" +
 	"\x04body\x18\x04 \x01(\tR\x04body\x12\x1c\n" +
-	"\ttimestamp\x18\x05 \x01(\x03R\ttimestamp\"]\n" +
-	"\x16RegisterMailboxRequest\x12\x1a\n" +
-	"\busername\x18\x01 \x01(\tR\busername\x12'\n" +
+	"\ttimestamp\x18\x05 \x01(\x03R\ttimestamp\"f\n" +
+	"\x16RegisterMailboxRequest\x12#\n" +
+	"\remail_address\x18\x01 \x01(\tR\femailAddress\x12'\n" +
 	"\x0fmailbox_address\x18\x02 \x01(\tR\x0emailboxAddress\"M\n" +
 	"\x17RegisterMailboxResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"2\n" +
-	"\x14LookupMailboxRequest\x12\x1a\n" +
-	"\busername\x18\x01 \x01(\tR\busername\"V\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\";\n" +
+	"\x14LookupMailboxRequest\x12#\n" +
+	"\remail_address\x18\x01 \x01(\tR\femailAddress\"V\n" +
 	"\x15LookupMailboxResponse\x12'\n" +
 	"\x0fmailbox_address\x18\x01 \x01(\tR\x0emailboxAddress\x12\x14\n" +
 	"\x05found\x18\x02 \x01(\bR\x05found\"A\n" +
@@ -604,9 +604,9 @@ const file_proto_mail_proto_rawDesc = "" +
 	"\amessage\x18\x01 \x01(\v2\x11.mail.MailMessageR\amessage\"I\n" +
 	"\x13ReceiveMailResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\",\n" +
-	"\x0eGetMailRequest\x12\x1a\n" +
-	"\busername\x18\x01 \x01(\tR\busername\"@\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"5\n" +
+	"\x0eGetMailRequest\x12#\n" +
+	"\remail_address\x18\x01 \x01(\tR\femailAddress\"@\n" +
 	"\x0fGetMailResponse\x12-\n" +
 	"\bmessages\x18\x01 \x03(\v2\x11.mail.MailMessageR\bmessages\">\n" +
 	"\x0fSendMailRequest\x12+\n" +
