@@ -29,9 +29,9 @@ const (
 //
 // Nameserver Service
 type NameserverClient interface {
-	// RegisterMailbox registers a user's mailbox address
+	// RegisterMailbox registers a user's full email address and their mailbox address.
 	RegisterMailbox(ctx context.Context, in *RegisterMailboxRequest, opts ...grpc.CallOption) (*RegisterMailboxResponse, error)
-	// LookupMailbox looks up the mailbox address for a given user
+	// LookupMailbox looks up the mailbox address for a given email address.
 	LookupMailbox(ctx context.Context, in *LookupMailboxRequest, opts ...grpc.CallOption) (*LookupMailboxResponse, error)
 }
 
@@ -69,9 +69,9 @@ func (c *nameserverClient) LookupMailbox(ctx context.Context, in *LookupMailboxR
 //
 // Nameserver Service
 type NameserverServer interface {
-	// RegisterMailbox registers a user's mailbox address
+	// RegisterMailbox registers a user's full email address and their mailbox address.
 	RegisterMailbox(context.Context, *RegisterMailboxRequest) (*RegisterMailboxResponse, error)
-	// LookupMailbox looks up the mailbox address for a given user
+	// LookupMailbox looks up the mailbox address for a given email address.
 	LookupMailbox(context.Context, *LookupMailboxRequest) (*LookupMailboxResponse, error)
 	mustEmbedUnimplementedNameserverServer()
 }
@@ -177,9 +177,9 @@ const (
 //
 // Mailbox Service
 type MailboxClient interface {
-	// ReceiveMail receives a mail message
+	// ReceiveMail receives a mail message.
 	ReceiveMail(ctx context.Context, in *ReceiveMailRequest, opts ...grpc.CallOption) (*ReceiveMailResponse, error)
-	// GetMail retrieves mail messages for a user
+	// GetMail retrieves mail messages for a user.
 	GetMail(ctx context.Context, in *GetMailRequest, opts ...grpc.CallOption) (*GetMailResponse, error)
 }
 
@@ -217,9 +217,9 @@ func (c *mailboxClient) GetMail(ctx context.Context, in *GetMailRequest, opts ..
 //
 // Mailbox Service
 type MailboxServer interface {
-	// ReceiveMail receives a mail message
+	// ReceiveMail receives a mail message.
 	ReceiveMail(context.Context, *ReceiveMailRequest) (*ReceiveMailResponse, error)
-	// GetMail retrieves mail messages for a user
+	// GetMail retrieves mail messages for a user.
 	GetMail(context.Context, *GetMailRequest) (*GetMailResponse, error)
 	mustEmbedUnimplementedMailboxServer()
 }
@@ -324,7 +324,7 @@ const (
 //
 // TransferServer Service
 type TransferServerClient interface {
-	// SendMail sends a mail message from a client
+	// SendMail sends a mail message from a client.
 	SendMail(ctx context.Context, in *SendMailRequest, opts ...grpc.CallOption) (*SendMailResponse, error)
 }
 
@@ -352,7 +352,7 @@ func (c *transferServerClient) SendMail(ctx context.Context, in *SendMailRequest
 //
 // TransferServer Service
 type TransferServerServer interface {
-	// SendMail sends a mail message from a client
+	// SendMail sends a mail message from a client.
 	SendMail(context.Context, *SendMailRequest) (*SendMailResponse, error)
 	mustEmbedUnimplementedTransferServerServer()
 }

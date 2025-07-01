@@ -31,23 +31,23 @@ func NewServer() *server {
 }
 
 // StartMailbox starts the gRPC server for the Mailbox
-func StartMailbox() {
-	lis, err := net.Listen("tcp", common.MailboxAddr)
+func StartMailbox(domain, port string) {
+	addr := "localhost:" + port
+	lis, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Fatalf("Mailbox failed to listen: %v", err)
+		log.Fatalf("Mailbox failed to listen on %s: %v", addr, err)
 	}
-
 	s := grpc.NewServer()
 	mailboxService := NewServer()
 	proto.RegisterMailboxServer(s, mailboxService)
-	log.Printf("Mailbox listening on %s", common.MailboxAddr)
+	log.Printf("Mailbox '%s' listening on %s", domain, addr)
 	if err := s.Serve(lis); err != nil {
-		log.Fatalf("Mailbox failed to serve: %v", err)
+		log.Fatalf("Mailbox failed to serve on %s: %v", addr, err)
 	}
 }
 
 // RegisterMailboxWithNameserver connects to the Nameserver and registers the mailbox
-func RegisterMailboxWithNameserver(username string) {
+func RegisterMailboxWithNameserver(emailAddress, mailboxAddr string) {
 	ctxDial, cancelDial := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancelDial()
 
@@ -63,18 +63,18 @@ func RegisterMailboxWithNameserver(username string) {
 	defer cancelReq()
 
 	req := &proto.RegisterMailboxRequest{
-		Username:       username,
-		MailboxAddress: common.MailboxAddr,
+		EmailAddress:   emailAddress,
+		MailboxAddress: mailboxAddr,
 	}
 
 	resp, err := client.RegisterMailbox(ctxReq, req)
 	if err != nil {
-		log.Fatalf("Mailbox: Could not register with Nameserver: %v", err)
+		log.Fatalf("Mailbox: Could not register '%s' with Nameserver: %v", emailAddress, err)
 	}
 	if resp.GetSuccess() {
-		log.Printf("Mailbox: Successfully registered '%s' with Nameserver: %s", username, resp.GetMessage())
+		log.Printf("Mailbox: Successfully registered '%s' with Nameserver: %s", emailAddress, resp.GetMessage())
 	} else {
-		log.Fatalf("Mailbox: Failed to register '%s' with Nameserver: %s", username, resp.GetMessage())
+		log.Fatalf("Mailbox: Failed to register '%s' with Nameserver: %s", emailAddress, resp.GetMessage())
 	}
 }
 
@@ -88,19 +88,15 @@ func (s *server) ReceiveMail(ctx context.Context, req *proto.ReceiveMailRequest)
 	if msg == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "mail message cannot be empty")
 	}
-
-	if msg.Recipient == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "recipient cannot be empty")
+	if msg.RecipientEmail == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "recipient email cannot be empty")
 	}
 
-	s.userInboxes[msg.Recipient] = append(s.userInboxes[msg.Recipient], msg)
+	s.userInboxes[msg.RecipientEmail] = append(s.userInboxes[msg.RecipientEmail], msg)
 	log.Printf("Mailbox for '%s': Received new mail from '%s' (Subject: %s)",
-		msg.Recipient, msg.Sender, msg.Subject)
+		msg.RecipientEmail, msg.SenderEmail, msg.Subject)
 
-	return &proto.ReceiveMailResponse{
-		Success: true,
-		Message: "Mail received successfully",
-	}, nil
+	return &proto.ReceiveMailResponse{Success: true, Message: "Mail received successfully"}, nil
 }
 
 // GetMail implements proto.MailboxServer
@@ -109,24 +105,24 @@ func (s *server) GetMail(ctx context.Context, req *proto.GetMailRequest) (*proto
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	username := req.GetUsername()
-	if username == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "username cannot be empty")
+	emailAddress := req.GetEmailAddress()
+	if emailAddress == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "email address cannot be empty")
 	}
 
-	messages, found := s.userInboxes[username]
+	messages, found := s.userInboxes[emailAddress]
 	if !found || len(messages) == 0 {
-		log.Printf("Mailbox for '%s': No new mail to retrieve", username)
+		log.Printf("Mailbox for '%s': No new mail to retrieve", emailAddress)
 		return &proto.GetMailResponse{Messages: []*proto.MailMessage{}}, nil
 	}
 
-	// Create a copy of message to return
+	// Create a copy of messages to return
 	msgsToReturn := make([]*proto.MailMessage, len(messages))
 	copy(msgsToReturn, messages)
 
 	// Clear the inbox for the user after retrieval
-	s.userInboxes[username] = []*proto.MailMessage{}
-	log.Printf("Mailbox for '%s': Retrieved %d messages and cleared inbox", username, len(messages))
+	s.userInboxes[emailAddress] = []*proto.MailMessage{} // Reset to empty slice
+	log.Printf("Mailbox for '%s': Retrieved %d messages and cleared inbox", emailAddress, len(msgsToReturn))
 
 	return &proto.GetMailResponse{Messages: msgsToReturn}, nil
 }

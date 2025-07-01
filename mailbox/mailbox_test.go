@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// TestMailbox_ReceiveAndGetMail tests the ReceiveMail and GetMail functionality.
+// TestMailbox_ReceiveAndGetMail tests the ReceiveMail and GetMail functionality with email addresses.
 func TestMailbox_ReceiveAndGetMail(t *testing.T) {
 	// Start a test Mailbox server
 	lis, err := net.Listen("tcp", "localhost:0") // Use port 0 for a random available port
@@ -40,16 +40,16 @@ func TestMailbox_ReceiveAndGetMail(t *testing.T) {
 	defer conn.Close()
 	client := proto.NewMailboxClient(conn)
 
-	testRecipient := "testuser"
+	testRecipientEmail := "testuser@example.com"
 
 	// Test Case 1: Receive a single mail
 	t.Run("ReceiveSingleMail", func(t *testing.T) {
 		msg := &proto.MailMessage{
-			Sender:    "sender1",
-			Recipient: testRecipient,
-			Subject:   "Test Subject 1",
-			Body:      "Test Body 1",
-			Timestamp: time.Now().Unix(),
+			SenderEmail:    "sender1@domain.com",
+			RecipientEmail: testRecipientEmail,
+			Subject:        "Test Subject 1",
+			Body:           "Test Body 1",
+			Timestamp:      time.Now().Unix(),
 		}
 		req := &proto.ReceiveMailRequest{Message: msg}
 		resp, err := client.ReceiveMail(context.Background(), req)
@@ -64,11 +64,11 @@ func TestMailbox_ReceiveAndGetMail(t *testing.T) {
 	// Test Case 2: Receive another mail
 	t.Run("ReceiveAnotherMail", func(t *testing.T) {
 		msg := &proto.MailMessage{
-			Sender:    "sender2",
-			Recipient: testRecipient,
-			Subject:   "Test Subject 2",
-			Body:      "Test Body 2",
-			Timestamp: time.Now().Unix(),
+			SenderEmail:    "sender2@domain.com",
+			RecipientEmail: testRecipientEmail,
+			Subject:        "Test Subject 2",
+			Body:           "Test Body 2",
+			Timestamp:      time.Now().Unix(),
 		}
 		req := &proto.ReceiveMailRequest{Message: msg}
 		resp, err := client.ReceiveMail(context.Background(), req)
@@ -82,7 +82,7 @@ func TestMailbox_ReceiveAndGetMail(t *testing.T) {
 
 	// Test Case 3: Get mail for the recipient (should retrieve both)
 	t.Run("GetMailForRecipient", func(t *testing.T) {
-		req := &proto.GetMailRequest{Username: testRecipient}
+		req := &proto.GetMailRequest{EmailAddress: testRecipientEmail}
 		resp, err := client.GetMail(context.Background(), req)
 		if err != nil {
 			t.Fatalf("GetMail failed: %v", err)
@@ -98,7 +98,7 @@ func TestMailbox_ReceiveAndGetMail(t *testing.T) {
 
 	// Test Case 4: Get mail again (should be empty now)
 	t.Run("GetMailAgainEmpty", func(t *testing.T) {
-		req := &proto.GetMailRequest{Username: testRecipient}
+		req := &proto.GetMailRequest{EmailAddress: testRecipientEmail}
 		resp, err := client.GetMail(context.Background(), req)
 		if err != nil {
 			t.Fatalf("GetMail failed: %v", err)
@@ -109,28 +109,28 @@ func TestMailbox_ReceiveAndGetMail(t *testing.T) {
 		}
 	})
 
-	// Test Case 5: Receive mail with empty recipient
-	t.Run("ReceiveMailEmptyRecipient", func(t *testing.T) {
+	// Test Case 5: Receive mail with empty recipient email
+	t.Run("ReceiveMailEmptyRecipientEmail", func(t *testing.T) {
 		msg := &proto.MailMessage{
-			Sender:    "sender",
-			Recipient: "", // Empty recipient
-			Subject:   "Invalid",
-			Body:      "Invalid",
-			Timestamp: time.Now().Unix(),
+			SenderEmail:    "sender@domain.com",
+			RecipientEmail: "", // Empty recipient email
+			Subject:        "Invalid",
+			Body:           "Invalid",
+			Timestamp:      time.Now().Unix(),
 		}
 		req := &proto.ReceiveMailRequest{Message: msg}
 		_, err := client.ReceiveMail(context.Background(), req)
 		if s, ok := status.FromError(err); !ok || s.Code() != codes.InvalidArgument {
-			t.Errorf("Expected InvalidArgument error for empty recipient, got %v", err)
+			t.Errorf("Expected InvalidArgument error for empty recipient email, got %v", err)
 		}
 	})
 
-	// Test Case 6: Get mail with empty username
-	t.Run("GetMailEmptyUsername", func(t *testing.T) {
-		req := &proto.GetMailRequest{Username: ""} // Empty username
+	// Test Case 6: Get mail with empty email address
+	t.Run("GetMailEmptyEmailAddress", func(t *testing.T) {
+		req := &proto.GetMailRequest{EmailAddress: ""} // Empty email address
 		_, err := client.GetMail(context.Background(), req)
 		if s, ok := status.FromError(err); !ok || s.Code() != codes.InvalidArgument {
-			t.Errorf("Expected InvalidArgument error for empty username, got %v", err)
+			t.Errorf("Expected InvalidArgument error for empty email address, got %v", err)
 		}
 	})
 }

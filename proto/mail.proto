@@ -4,50 +4,48 @@ option go_package = "./proto";
 
 package mail;
 
-// MailMessage represents a simplified email message
+// MailMessage represents a simplified email message.
 message MailMessage {
-    string sender = 1;
-    string recipient = 2;
-    string subject = 3;
-    string body = 4;
-    int64 timestamp = 5; // Unix timestamp
+  string sender_email = 1;
+  string recipient_email = 2;
+  string subject = 3;
+  string body = 4;
+  int64 timestamp = 5; // Unix timestamp
 }
 
 // Nameserver Service
 service Nameserver {
-    // RegisterMailbox registers a user's mailbox address
-    rpc RegisterMailbox (RegisterMailboxRequest) returns (RegisterMailboxResponse);
-    
-    // LookupMailbox looks up the mailbox address for a given user
-    rpc LookupMailbox (LookupMailboxRequest) returns (LookupMailboxResponse);
+  // RegisterMailbox registers a user's full email address and their mailbox address.
+  rpc RegisterMailbox (RegisterMailboxRequest) returns (RegisterMailboxResponse);
+  // LookupMailbox looks up the mailbox address for a given email address.
+  rpc LookupMailbox (LookupMailboxRequest) returns (LookupMailboxResponse);
 }
 
 message RegisterMailboxRequest {
-    string username = 1;
-    string mailbox_address = 2; 
+  string email_address = 1;
+  string mailbox_address = 2; 
 }
 
 message RegisterMailboxResponse {
-    bool success = 1;
-    string message = 2;
+  bool success = 1;
+  string message = 2;
 }
 
 message LookupMailboxRequest {
-    string username = 1;
+  string email_address = 1;
 }
 
 message LookupMailboxResponse {
-    string mailbox_address = 1;
-    bool found = 2;
+  string mailbox_address = 1;
+  bool found = 2;
 }
 
 // Mailbox Service
 service Mailbox {
-    // ReceiveMail receives a mail message
-    rpc ReceiveMail (ReceiveMailRequest) returns (ReceiveMailResponse);
-
-    // GetMail retrieves mail messages for a user
-    rpc GetMail (GetMailRequest) returns (GetMailResponse);
+  // ReceiveMail receives a mail message.
+  rpc ReceiveMail (ReceiveMailRequest) returns (ReceiveMailResponse);
+  // GetMail retrieves mail messages for a user.
+  rpc GetMail (GetMailRequest) returns (GetMailResponse);
 }
 
 message ReceiveMailRequest {
@@ -60,7 +58,7 @@ message ReceiveMailResponse {
 }
 
 message GetMailRequest {
-  string username = 1;
+  string email_address = 1;
 }
 
 message GetMailResponse {
@@ -69,7 +67,7 @@ message GetMailResponse {
 
 // TransferServer Service
 service TransferServer {
-  // SendMail sends a mail message from a client
+  // SendMail sends a mail message from a client.
   rpc SendMail (SendMailRequest) returns (SendMailResponse);
 }
 

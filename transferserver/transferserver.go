@@ -61,34 +61,33 @@ func (s *server) SendMail(ctx context.Context, req *proto.SendMailRequest) (*pro
 	if msg == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "mail message cannot be empty")
 	}
-	if msg.Recipient == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "recipient cannot be empty")
+	if msg.RecipientEmail == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "recipient email cannot be empty")
 	}
 
 	log.Printf("TransferServer: Received mail from '%s' for '%s' (Subject: %s)",
-		msg.Sender, msg.Recipient, msg.Subject)
+		msg.SenderEmail, msg.RecipientEmail, msg.Subject)
 
-	// 1. Lookup recipient's mailbox address from Nameserver
+	// 1. Lookup recipient's mailbox address from Nameserver using the full email address
 	lookupCtx, lookupCancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer lookupCancel()
 
-	lookupReq := &proto.LookupMailboxRequest{Username: msg.Recipient}
+	lookupReq := &proto.LookupMailboxRequest{EmailAddress: msg.RecipientEmail}
 	lookupResp, err := s.nameserverClient.LookupMailbox(lookupCtx, lookupReq)
 	if err != nil {
-		log.Printf("TransferServer: Error looking up mailbox for '%s': %v", msg.Recipient, err)
+		log.Printf("TransferServer: Error looking up mailbox for '%s': %v", msg.RecipientEmail, err)
 		return nil, status.Errorf(codes.Internal, "failed to lookup recipient mailbox: %v", err)
 	}
 
 	if !lookupResp.GetFound() {
-		log.Printf("TransferServer: Recipient '%s' not found by Nameserver.", msg.Recipient)
-		return &proto.SendMailResponse{Success: false, Message: fmt.Sprintf("Recipient '%s' not found", msg.Recipient)}, nil
+		log.Printf("TransferServer: Recipient '%s' not found by Nameserver.", msg.RecipientEmail)
+		return &proto.SendMailResponse{Success: false, Message: fmt.Sprintf("Recipient '%s' not found", msg.RecipientEmail)}, nil
 	}
 
 	recipientMailboxAddr := lookupResp.GetMailboxAddress()
-	log.Printf("TransferServer: Found recipient '%s' at mailbox address '%s'", msg.Recipient, recipientMailboxAddr)
+	log.Printf("TransferServer: Found recipient '%s' at mailbox address '%s'", msg.RecipientEmail, recipientMailboxAddr)
 
 	// 2. Connect to recipient's Mailbox and send the message
-	// Use grpc.DialContext for better context management
 	recipientDialCtx, recipientDialCancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer recipientDialCancel()
 	conn, err := grpc.DialContext(recipientDialCtx, recipientMailboxAddr, grpc.WithInsecure()) // Insecure for practice, use TLS in production
@@ -111,10 +110,10 @@ func (s *server) SendMail(ctx context.Context, req *proto.SendMailRequest) (*pro
 	}
 
 	if receiveMailResp.GetSuccess() {
-		log.Printf("TransferServer: Mail successfully delivered to '%s' (Mailbox: %s)", msg.Recipient, recipientMailboxAddr)
+		log.Printf("TransferServer: Mail successfully delivered to '%s' (Mailbox: %s)", msg.RecipientEmail, recipientMailboxAddr)
 		return &proto.SendMailResponse{Success: true, Message: "Mail sent successfully"}, nil
 	} else {
-		log.Printf("TransferServer: Mail delivery to '%s' failed: %s", msg.Recipient, receiveMailResp.GetMessage())
+		log.Printf("TransferServer: Mail delivery to '%s' failed: %s", msg.RecipientEmail, receiveMailResp.GetMessage())
 		return &proto.SendMailResponse{Success: false, Message: "Mail delivery failed"}, nil
 	}
 }
