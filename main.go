@@ -31,7 +31,7 @@ func main() {
 	go transferserver.StartTransferServer()
 	time.Sleep(time.Millisecond * 500) // Give TransferServer a moment to start
 
-	log.Println("\n--- System initialized. Running client operations... ---\n")
+	log.Println("\n--- System initialized. Running client operations... ---")
 
 	// --- Client Operations ---
 

@@ -1,5 +1,5 @@
 # Define the Go application name
-APP_NAME = GoDissys
+APP_NAME = distributed-mail-system
 
 # Define the proto file path
 PROTO_FILE = proto/mail.proto
@@ -19,7 +19,7 @@ proto:
 	protoc --go_out=$(PROTO_GO_OUT) --go_opt=paths=source_relative \
 	       --go-grpc_out=$(PROTO_GO_OUT) --go-grpc_opt=paths=source_relative \
 	       $(PROTO_FILE)
-	@echo "Go code generation complete." 
+	@echo "Go code generation complete."
 
 # Target to build the Go application
 .PHONY: build
@@ -34,6 +34,13 @@ build: proto
 run: build
 	@echo "Running $(APP_NAME)..."
 	./$(APP_NAME)
+
+# Target to run all Go tests
+.PHONY: test
+test: build # Ensure the code is built before running tests
+	@echo "Running Go tests..."
+	go test ./...
+	@echo "All tests complete."
 
 # Target to clean up generated files and compiled binary
 .PHONY: clean
