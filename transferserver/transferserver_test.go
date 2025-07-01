@@ -1,0 +1,193 @@
+package transferserver
+
+import (
+	"GoDissys/proto/proto"
+	"context"
+	"net"
+	"sync"
+	"testing"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+// MockNameserverClient is a mock implementation of proto.NameserverClient for testing.
+type MockNameserverClient struct {
+	mu        sync.RWMutex
+	mailboxes map[string]string // username -> mailbox address
+}
+
+func NewMockNameserverClient() *MockNameserverClient {
+	return &MockNameserverClient{
+		mailboxes: make(map[string]string),
+	}
+}
+
+func (m *MockNameserverClient) RegisterMailbox(ctx context.Context, in *proto.RegisterMailboxRequest, opts ...grpc.CallOption) (*proto.RegisterMailboxResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.mailboxes[in.GetUsername()] = in.GetMailboxAddress()
+	return &proto.RegisterMailboxResponse{Success: true, Message: "Mock registered"}, nil
+}
+
+func (m *MockNameserverClient) LookupMailbox(ctx context.Context, in *proto.LookupMailboxRequest, opts ...grpc.CallOption) (*proto.LookupMailboxResponse, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	addr, found := m.mailboxes[in.GetUsername()]
+	return &proto.LookupMailboxResponse{Found: found, MailboxAddress: addr}, nil
+}
+
+// MockMailboxServer is a mock implementation of proto.MailboxServer for testing.
+type MockMailboxServer struct {
+	proto.UnimplementedMailboxServer
+	receivedMessages []*proto.MailMessage
+	mu               sync.Mutex
+}
+
+func NewMockMailboxServer() *MockMailboxServer {
+	return &MockMailboxServer{
+		receivedMessages: make([]*proto.MailMessage, 0),
+	}
+}
+
+func (m *MockMailboxServer) ReceiveMail(ctx context.Context, req *proto.ReceiveMailRequest) (*proto.ReceiveMailResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.receivedMessages = append(m.receivedMessages, req.GetMessage())
+	return &proto.ReceiveMailResponse{Success: true, Message: "Mock mail received"}, nil
+}
+
+func (m *MockMailboxServer) GetMail(ctx context.Context, req *proto.GetMailRequest) (*proto.GetMailResponse, error) {
+	// Not directly used by TransferServer, but implemented for completeness if needed later
+	return &proto.GetMailResponse{Messages: []*proto.MailMessage{}}, nil
+}
+
+// TestTransferServer_SendMail tests the SendMail functionality of the TransferServer.
+func TestTransferServer_SendMail(t *testing.T) {
+	// 1. Start Mock Mailbox Server
+	mockMailbox := NewMockMailboxServer()
+	mailboxLis, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("Failed to listen for mock mailbox: %v", err)
+	}
+	mailboxSrv := grpc.NewServer()
+	proto.RegisterMailboxServer(mailboxSrv, mockMailbox)
+	go func() {
+		if err := mailboxSrv.Serve(mailboxLis); err != nil && err != grpc.ErrServerStopped {
+			t.Errorf("Mock Mailbox failed to serve: %v", err)
+		}
+	}()
+	defer mailboxSrv.Stop()
+	mailboxAddr := mailboxLis.Addr().String()
+
+	// 2. Setup Mock Nameserver Client
+	mockNameserver := NewMockNameserverClient()
+	// Register a user with the mock nameserver to point to our mock mailbox
+	mockNameserver.RegisterMailbox(context.Background(), &proto.RegisterMailboxRequest{
+		Username:       "recipient1",
+		MailboxAddress: mailboxAddr,
+	})
+
+	// 3. Start TransferServer with Mock Nameserver Client
+	transferLis, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("Failed to listen for transfer server: %v", err)
+	}
+	transferSrv := grpc.NewServer()
+	transferServerService := NewServer(mockNameserver) // Inject the mock nameserver client
+	proto.RegisterTransferServerServer(transferSrv, transferServerService)
+	go func() {
+		if err := transferSrv.Serve(transferLis); err != nil && err != grpc.ErrServerStopped {
+			t.Errorf("TransferServer failed to serve: %v", err)
+		}
+	}()
+	defer transferSrv.Stop()
+
+	// Connect to the test TransferServer
+	connCtx, connCancel := context.WithTimeout(context.Background(), time.Second)
+	defer connCancel()
+	conn, err := grpc.DialContext(connCtx, transferLis.Addr().String(), grpc.WithInsecure(), grpc.WithBlock())
+	if err != nil {
+		t.Fatalf("Could not connect to TransferServer: %v", err)
+	}
+	defer conn.Close()
+	client := proto.NewTransferServerClient(conn)
+
+	// Test Case 1: Successfully send mail to a registered recipient
+	t.Run("SendMailSuccess", func(t *testing.T) {
+		msg := &proto.MailMessage{
+			Sender:    "senderA",
+			Recipient: "recipient1",
+			Subject:   "Hello Recipient1",
+			Body:      "This is a test email.",
+			Timestamp: time.Now().Unix(),
+		}
+		req := &proto.SendMailRequest{Message: msg}
+		resp, err := client.SendMail(context.Background(), req)
+		if err != nil {
+			t.Fatalf("SendMail failed: %v", err)
+		}
+		if !resp.GetSuccess() {
+			t.Errorf("SendMail expected success, got false. Message: %s", resp.GetMessage())
+		}
+
+		// Verify the message was received by the mock mailbox
+		time.Sleep(time.Millisecond * 100) // Give a moment for async processing
+		mockMailbox.mu.Lock()
+		defer mockMailbox.mu.Unlock()
+		if len(mockMailbox.receivedMessages) != 1 {
+			t.Errorf("Expected 1 message in mock mailbox, got %d", len(mockMailbox.receivedMessages))
+		}
+		if mockMailbox.receivedMessages[0].GetSubject() != "Hello Recipient1" {
+			t.Errorf("Received message subject mismatch: got %s", mockMailbox.receivedMessages[0].GetSubject())
+		}
+		// Clear for next test
+		mockMailbox.receivedMessages = []*proto.MailMessage{}
+	})
+
+	// Test Case 2: Send mail to an unregistered recipient
+	t.Run("SendMailUnregisteredRecipient", func(t *testing.T) {
+		msg := &proto.MailMessage{
+			Sender:    "senderB",
+			Recipient: "unknownuser",
+			Subject:   "To Unknown",
+			Body:      "This should fail.",
+			Timestamp: time.Now().Unix(),
+		}
+		req := &proto.SendMailRequest{Message: msg}
+		resp, err := client.SendMail(context.Background(), req)
+		if err != nil {
+			t.Fatalf("SendMail failed: %v", err)
+		}
+		if resp.GetSuccess() {
+			t.Errorf("SendMail expected failure for unknown user, got success")
+		}
+		if resp.GetMessage() != "Recipient 'unknownuser' not found" {
+			t.Errorf("Expected 'Recipient not found' message, got '%s'", resp.GetMessage())
+		}
+		// Ensure no message was received by the mock mailbox
+		mockMailbox.mu.Lock()
+		defer mockMailbox.mu.Unlock()
+		if len(mockMailbox.receivedMessages) != 0 {
+			t.Errorf("Expected 0 messages in mock mailbox, got %d", len(mockMailbox.receivedMessages))
+		}
+	})
+
+	// Test Case 3: Send mail with empty recipient
+	t.Run("SendMailEmptyRecipient", func(t *testing.T) {
+		msg := &proto.MailMessage{
+			Sender:    "senderC",
+			Recipient: "", // Empty recipient
+			Subject:   "Invalid Mail",
+			Body:      "This should cause an error.",
+			Timestamp: time.Now().Unix(),
+		}
+		req := &proto.SendMailRequest{Message: msg}
+		_, err := client.SendMail(context.Background(), req)
+		if s, ok := status.FromError(err); !ok || s.Code() != codes.InvalidArgument {
+			t.Errorf("Expected InvalidArgument error for empty recipient, got %v", err)
+		}
+	})
+}
