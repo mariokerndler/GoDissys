@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+option go_package = "./proto";
+
+package mail;
+
+// MailMessage represents a simplified email message
+message MailMessage {
+    string sender = 1;
+    string recipient = 2;
+    string subject = 3;
+    string body = 4;
+    int64 timestamp = 5; // Unix timestamp
+}
+
+// Nameserver Service
+service Nameserver {
+    // RegisterMailbox registers a user's mailbox address
+    rpc RegisterMailbox (RegisterMailboxRequest) returns (RegisterMailboxResponse);
+    
+    // LookupMailbox looks up the mailbox address for a given user
+    rpc LookupMailbox (LookupMailboxRequest) returns (LookupMailboxResponse);
+}
+
+message RegisterMailboxRequest {
+    string username = 1;
+    string mailbox_address = 2; 
+}
+
+message RegisterMailboxResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message LookupMailboxRequest {
+    string username = 1;
+}
+
+message LookupMailboxResponse {
+    string mailbox_address = 1;
+    bool found = 2;
+}
+
+// Mailbox Service
+service Mailbox {
+    // ReceiveMail receives a mail message
+    rpc ReceiveMail (ReceiveMailRequest) returns (ReceiveMailResponse);
+
+    // GetMail retrieves mail messages for a user
+    rpc GetMail (GetMailRequest) returns (GetMailResponse);
+}
+
+message ReceiveMailRequest {
+  MailMessage message = 1;
+}
+
+message ReceiveMailResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message GetMailRequest {
+  string username = 1;
+}
+
+message GetMailResponse {
+  repeated MailMessage messages = 1;
+}
+
+// TransferServer Service
+service TransferServer {
+  // SendMail sends a mail message from a client
+  rpc SendMail (SendMailRequest) returns (SendMailResponse);
+}
+
+message SendMailRequest {
+  MailMessage message = 1;
+}
+
+message SendMailResponse {
+  bool success = 1;
+  string message = 2;
+}
