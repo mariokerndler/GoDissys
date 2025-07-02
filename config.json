@@ -1,0 +1,18 @@
+{
+  "NameserverAddr": "localhost:50051",
+  "TransferServerAddr": "localhost:50053",
+  "Mailboxes": {
+    "earth.com": {
+      "Domain": "earth",
+      "Addr": "localhost:50054"
+    },
+    "saturn.com": {
+      "Domain": "saturn",
+      "Addr": "localhost:50055"
+    }
+  },
+  "NameserverManagedDomains": [
+    "earth.com",
+    "saturn.com"
+  ]
+}

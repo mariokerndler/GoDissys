@@ -1,33 +1,34 @@
 package nameserver
 
 import (
-	"GoDissys/common"
 	"GoDissys/proto/proto"
 	"context"
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-// server is used to implement proto.NameserverServer
+// server is used to implement proto.NameserverServer.
 type server struct {
 	proto.UnimplementedNameserverServer
-
-	// mailboxes maps usernames to their mailbox address (e.g., "localhost:50052")
+	// mailboxes maps full email address to their mailbox address
 	mailboxes map[string]string
 	mu        sync.RWMutex // Mutex to protect the mailboxes map
 
-	// responsibleDomains store the domains this Nameserver is responsible for
+	// responsibleDomains stores the domains this Nameserver is responsible for.
 	responsibleDomains map[string]bool
 }
 
-// NewServer creates a new Nameserver instance
+// NewServer creates a new Nameserver instance, responsible for the given domains.
 func NewServer(domains []string) *server {
 	rd := make(map[string]bool)
 	for _, d := range domains {
@@ -37,22 +38,6 @@ func NewServer(domains []string) *server {
 		mailboxes:          make(map[string]string),
 		responsibleDomains: rd,
 	}
-}
-
-// StartNameserver starts the gRPC server for the Nameserver
-func StartNameserver(domains ...string) {
-	lis, err := net.Listen("tcp", common.NameserverAddr)
-	if err != nil {
-		log.Fatalf("Nameserver failed to listen: %v", err)
-	}
-	s := grpc.NewServer()
-	nameserverService := NewServer(domains)
-	proto.RegisterNameserverServer(s, nameserverService)
-	log.Printf("Nameserver listening on %s, responsible for domains: %v", common.NameserverAddr, domains)
-	if err := s.Serve(lis); err != nil {
-		log.Fatalf("Nameserver failed to server: %v", err)
-	}
-
 }
 
 // RegisterMailbox implements proto.NameserverServer.
@@ -95,23 +80,52 @@ func (s *server) RegisterMailbox(ctx context.Context, req *proto.RegisterMailbox
 	return &proto.RegisterMailboxResponse{Success: true, Message: "Mailbox registered successfully"}, nil
 }
 
-// LookupMailbox implements proto.NameserverServer
-// It looks up the mailbox address for a given user
+// LookupMailbox implements proto.NameserverServer.
+// It looks up the mailbox address for a given email address.
 func (s *server) LookupMailbox(ctx context.Context, req *proto.LookupMailboxRequest) (*proto.LookupMailboxResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	username := req.GetEmailAddress()
-	if username == "" {
+	emailAddress := req.GetEmailAddress()
+	if emailAddress == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "email address cannot be empty")
 	}
 
-	addr, found := s.mailboxes[username]
+	addr, found := s.mailboxes[emailAddress]
 	if !found {
-		log.Printf("Nameserver: Mailbox for user '%s' not found", username)
+		log.Printf("Nameserver: Mailbox for email '%s' not found", emailAddress)
 		return &proto.LookupMailboxResponse{Found: false, MailboxAddress: ""}, nil
 	}
 
-	log.Printf("Nameserver: Found mailbox for email '%s' at '%s'", username, addr)
+	log.Printf("Nameserver: Found mailbox for email '%s' at '%s'", emailAddress, addr)
 	return &proto.LookupMailboxResponse{Found: true, MailboxAddress: addr}, nil
+}
+
+// StartNameserver starts the gRPC server for the Nameserver, responsible for the given domains.
+// It also sets up graceful shutdown.
+func StartNameserver(nameserverAddr string, domains ...string) {
+	lis, err := net.Listen("tcp", nameserverAddr)
+	if err != nil {
+		log.Printf("Nameserver failed to listen on %s: %v", nameserverAddr, err)
+		return // Return instead of Fatalf, allow main to handle
+	}
+	s := grpc.NewServer()
+	nameserverService := NewServer(domains) // Pass domains to NewServer
+	proto.RegisterNameserverServer(s, nameserverService)
+	log.Printf("Nameserver listening on %s, responsible for domains: %v", nameserverAddr, domains)
+
+	// Goroutine to serve gRPC requests
+	go func() {
+		if err := s.Serve(lis); err != nil && err != grpc.ErrServerStopped {
+			log.Printf("Nameserver failed to serve: %v", err)
+		}
+	}()
+
+	// Set up graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit // Block until a signal is received
+	log.Printf("Nameserver received shutdown signal. Shutting down gracefully...")
+	s.GracefulStop() // Gracefully stop the gRPC server
+	log.Println("Nameserver server stopped.")
 }
