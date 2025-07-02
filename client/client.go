@@ -1,7 +1,6 @@
 package client
 
 import (
-	"GoDissys/common"
 	"GoDissys/proto/proto"
 	"context"
 	"fmt"
@@ -12,12 +11,12 @@ import (
 )
 
 // SendMail connects to the TransferServer and sends a mail message.
-func SendMail(senderEmail, recipientEmail, subject, body string) {
+func SendMail(transferServerAddr, senderEmail, recipientEmail, subject, body string) {
 	transferDialCtx, transferDialCancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer transferDialCancel()
-	conn, err := grpc.DialContext(transferDialCtx, common.TransferServerAddr, grpc.WithInsecure()) // Insecure for practice
+	conn, err := grpc.DialContext(transferDialCtx, transferServerAddr, grpc.WithInsecure()) // Insecure for practice
 	if err != nil {
-		log.Fatalf("Client: Could not connect to TransferServer at %s: %v", common.TransferServerAddr, err)
+		log.Fatalf("Client: Could not connect to TransferServer at %s: %v", transferServerAddr, err)
 	}
 	defer conn.Close()
 

@@ -20,6 +20,7 @@ func TestNameserver_RegisterAndLookup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to listen: %v", err)
 	}
+	nameserverAddr := lis.Addr().String() // Get the actual address
 	s := grpc.NewServer()
 	nameserverService := NewServer(testDomains) // Pass responsible domains
 	proto.RegisterNameserverServer(s, nameserverService)
@@ -34,7 +35,7 @@ func TestNameserver_RegisterAndLookup(t *testing.T) {
 	// Connect to the test Nameserver
 	connCtx, connCancel := context.WithTimeout(context.Background(), time.Second)
 	defer connCancel()
-	conn, err := grpc.DialContext(connCtx, lis.Addr().String(), grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := grpc.DialContext(connCtx, nameserverAddr, grpc.WithInsecure(), grpc.WithBlock()) // Use nameserverAddr
 	if err != nil {
 		t.Fatalf("Could not connect to Nameserver: %v", err)
 	}

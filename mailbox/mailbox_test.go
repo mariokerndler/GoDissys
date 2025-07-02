@@ -19,8 +19,9 @@ func TestMailbox_ReceiveAndGetMail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to listen: %v", err)
 	}
+	mailboxAddr := lis.Addr().String() // Get the actual address
 	s := grpc.NewServer()
-	mailboxService := NewServer()
+	mailboxService := NewServer("test.com") // Pass a dummy domain for the test mailbox
 	proto.RegisterMailboxServer(s, mailboxService)
 
 	go func() {
@@ -33,7 +34,7 @@ func TestMailbox_ReceiveAndGetMail(t *testing.T) {
 	// Connect to the test Mailbox
 	connCtx, connCancel := context.WithTimeout(context.Background(), time.Second)
 	defer connCancel()
-	conn, err := grpc.DialContext(connCtx, lis.Addr().String(), grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := grpc.DialContext(connCtx, mailboxAddr, grpc.WithInsecure(), grpc.WithBlock()) // Use mailboxAddr
 	if err != nil {
 		t.Fatalf("Could not connect to Mailbox: %v", err)
 	}

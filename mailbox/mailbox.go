@@ -1,12 +1,14 @@
 package mailbox
 
 import (
-	"GoDissys/common"
 	"GoDissys/proto/proto"
 	"context"
 	"log"
 	"net"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"google.golang.org/grpc"
@@ -14,46 +16,110 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// server is used to implement proto.MailboxServer
+// server is used to implement proto.MailboxServer.
 type server struct {
 	proto.UnimplementedMailboxServer
-
-	// userInbox maps username to a slice of MailMessage
+	// userInboxes maps full email address to a slice of MailMessage
 	userInboxes map[string][]*proto.MailMessage
-	mu          sync.RWMutex // Mutex to protext the userInboxes map
+	mu          sync.RWMutex // Mutex to protect the userInboxes map
+	Domain      string
 }
 
-// NewServer creates a new Mailbox instance
-func NewServer() *server {
+// NewServer creates a new Mailbox instance, responsible for the given domain.
+func NewServer(domain string) *server {
 	return &server{
 		userInboxes: make(map[string][]*proto.MailMessage),
+		Domain:      domain,
 	}
 }
 
-// StartMailbox starts the gRPC server for the Mailbox
-func StartMailbox(domain, port string) {
-	addr := "localhost:" + port
-	lis, err := net.Listen("tcp", addr)
+// ReceiveMail implements proto.MailboxServer.
+// It receives a mail message from the TransferServer and stores it.
+func (s *server) ReceiveMail(ctx context.Context, req *proto.ReceiveMailRequest) (*proto.ReceiveMailResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	msg := req.GetMessage()
+	if msg == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "mail message cannot be empty")
+	}
+	if msg.RecipientEmail == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "recipient email cannot be empty")
+	}
+
+	s.userInboxes[msg.RecipientEmail] = append(s.userInboxes[msg.RecipientEmail], msg)
+	log.Printf("Mailbox '%s' for '%s': Received new mail from '%s' (Subject: %s)",
+		s.Domain, msg.RecipientEmail, msg.SenderEmail, msg.Subject) // Used s.Domain in log
+
+	return &proto.ReceiveMailResponse{Success: true, Message: "Mail received successfully"}, nil
+}
+
+// GetMail implements proto.MailboxServer.
+// It retrieves all messages for a given email address and then clears their inbox.
+func (s *server) GetMail(ctx context.Context, req *proto.GetMailRequest) (*proto.GetMailResponse, error) {
+	s.mu.Lock() // Use Lock because we modify the map (clearing inbox)
+	defer s.mu.Unlock()
+
+	emailAddress := req.GetEmailAddress()
+	if emailAddress == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "email address cannot be empty")
+	}
+
+	messages, found := s.userInboxes[emailAddress]
+	if !found || len(messages) == 0 {
+		log.Printf("Mailbox '%s' for '%s': No new mail to retrieve", s.Domain, emailAddress)
+		return &proto.GetMailResponse{Messages: []*proto.MailMessage{}}, nil
+	}
+
+	// Create a copy of messages to return
+	msgsToReturn := make([]*proto.MailMessage, len(messages))
+	copy(msgsToReturn, messages)
+
+	// Clear the inbox for the user after retrieval
+	s.userInboxes[emailAddress] = []*proto.MailMessage{} // Reset to empty slice
+	log.Printf("Mailbox '%s' for '%s': Retrieved %d messages and cleared inbox", s.Domain, emailAddress, len(msgsToReturn))
+
+	return &proto.GetMailResponse{Messages: msgsToReturn}, nil
+}
+
+// StartMailbox starts the gRPC server for the Mailbox on a specific address.
+// It also sets up graceful shutdown.
+func StartMailbox(domain, mailboxAddr string) {
+	lis, err := net.Listen("tcp", mailboxAddr)
 	if err != nil {
-		log.Fatalf("Mailbox failed to listen on %s: %v", addr, err)
+		log.Printf("Mailbox '%s' failed to listen on %s: %v", domain, mailboxAddr, err)
+		return // Return instead of Fatalf, allow main to handle
 	}
+
 	s := grpc.NewServer()
-	mailboxService := NewServer()
+	mailboxService := NewServer(domain) // Pass domain to NewServer
 	proto.RegisterMailboxServer(s, mailboxService)
-	log.Printf("Mailbox '%s' listening on %s", domain, addr)
-	if err := s.Serve(lis); err != nil {
-		log.Fatalf("Mailbox failed to serve on %s: %v", addr, err)
-	}
+	log.Printf("Mailbox '%s' listening on %s", domain, mailboxAddr)
+
+	// Goroutine to serve gRPC requests
+	go func() {
+		if err := s.Serve(lis); err != nil && err != grpc.ErrServerStopped {
+			log.Printf("Mailbox '%s' failed to serve: %v", domain, err)
+		}
+	}()
+
+	// Set up graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit // Block until a signal is received
+	log.Printf("Mailbox '%s' received shutdown signal. Shutting down gracefully...", domain)
+	s.GracefulStop() // Gracefully stop the gRPC server
+	log.Printf("Mailbox '%s' server stopped.", domain)
 }
 
-// RegisterMailboxWithNameserver connects to the Nameserver and registers the mailbox
-func RegisterMailboxWithNameserver(emailAddress, mailboxAddr string) {
+// RegisterMailboxWithNameserver connects to the Nameserver and registers this mailbox for a specific email.
+func RegisterMailboxWithNameserver(nameserverAddr, emailAddress, mailboxAddr string) {
 	ctxDial, cancelDial := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancelDial()
 
-	conn, err := grpc.DialContext(ctxDial, common.NameserverAddr, grpc.WithInsecure()) // Insecure for practice, use TLS in production
+	conn, err := grpc.DialContext(ctxDial, nameserverAddr, grpc.WithInsecure()) // Use nameserverAddr
 	if err != nil {
-		log.Fatalf("Mailbox: Could not connect to Nameserver at %s: %v", common.NameserverAddr, err)
+		log.Fatalf("Mailbox: Could not connect to Nameserver at %s: %v", nameserverAddr, err)
 	}
 	defer conn.Close()
 
@@ -76,53 +142,4 @@ func RegisterMailboxWithNameserver(emailAddress, mailboxAddr string) {
 	} else {
 		log.Fatalf("Mailbox: Failed to register '%s' with Nameserver: %s", emailAddress, resp.GetMessage())
 	}
-}
-
-// ReceiveMail implements proto.MailboxServer
-// It receives a mail message from the TransferServer and stores it
-func (s *server) ReceiveMail(ctx context.Context, req *proto.ReceiveMailRequest) (*proto.ReceiveMailResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	msg := req.GetMessage()
-	if msg == nil {
-		return nil, status.Errorf(codes.InvalidArgument, "mail message cannot be empty")
-	}
-	if msg.RecipientEmail == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "recipient email cannot be empty")
-	}
-
-	s.userInboxes[msg.RecipientEmail] = append(s.userInboxes[msg.RecipientEmail], msg)
-	log.Printf("Mailbox for '%s': Received new mail from '%s' (Subject: %s)",
-		msg.RecipientEmail, msg.SenderEmail, msg.Subject)
-
-	return &proto.ReceiveMailResponse{Success: true, Message: "Mail received successfully"}, nil
-}
-
-// GetMail implements proto.MailboxServer
-// It retrieves all messages for a given user and then clears their inbox
-func (s *server) GetMail(ctx context.Context, req *proto.GetMailRequest) (*proto.GetMailResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	emailAddress := req.GetEmailAddress()
-	if emailAddress == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "email address cannot be empty")
-	}
-
-	messages, found := s.userInboxes[emailAddress]
-	if !found || len(messages) == 0 {
-		log.Printf("Mailbox for '%s': No new mail to retrieve", emailAddress)
-		return &proto.GetMailResponse{Messages: []*proto.MailMessage{}}, nil
-	}
-
-	// Create a copy of messages to return
-	msgsToReturn := make([]*proto.MailMessage, len(messages))
-	copy(msgsToReturn, messages)
-
-	// Clear the inbox for the user after retrieval
-	s.userInboxes[emailAddress] = []*proto.MailMessage{} // Reset to empty slice
-	log.Printf("Mailbox for '%s': Retrieved %d messages and cleared inbox", emailAddress, len(msgsToReturn))
-
-	return &proto.GetMailResponse{Messages: msgsToReturn}, nil
 }
