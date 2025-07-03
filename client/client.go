@@ -1,14 +1,34 @@
 package client
 
 import (
+	"GoDissys/mailbox"
 	"GoDissys/proto/proto"
+	"bufio"
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
 )
+
+// Config holds the necessary addresses for the client to connect to services
+type Config struct {
+	NameserverAddr     string
+	TransferServerAddr string
+	Mailboxes          map[string]struct {
+		Domain string
+		Addr   string
+	}
+}
+
+// currentClientState holds the state of the logged-in client
+type currentClientState struct {
+	EmailAddress   string
+	MailboxAddress string
+}
 
 // SendMail connects to the TransferServer and sends a mail message.
 func SendMail(transferServerAddr, senderEmail, recipientEmail, subject, body string) {
@@ -86,4 +106,116 @@ func GetMail(emailAddress, mailboxAddr string) {
 		fmt.Printf("Body:\n%s\n", msg.Body)
 		fmt.Println("-----------------")
 	}
+}
+
+func StartCLI(cfg Config) {
+	scanner := bufio.NewScanner(os.Stdin)
+	var currentState currentClientState
+
+	fmt.Println("\n--- Distributed Mail Client CLI ---")
+	fmt.Println("Commands:")
+	fmt.Println("  signup <your_email> <your_domain_mailbox_alias> - Register your email (e.g., alice@earth.com earth)")
+	fmt.Println("  login <your_email> - Log in to manage your mail (e.g., alice@earth.com)")
+	fmt.Println("  send <recipient_email> <subject> <body_text> - Send an email")
+	fmt.Println("  get - Retrieve your mail")
+	fmt.Println("  whoami - Show current logged-in user")
+	fmt.Println("  exit - Quit the client")
+	fmt.Print("> ")
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.Fields(line)
+		if len(parts) == 0 {
+			fmt.Print("> ")
+			continue
+		}
+
+		command := strings.ToLower(parts[0])
+
+		switch command {
+		case "signup":
+			if len(parts) != 3 {
+				fmt.Println("Usage: signup <your_email> <your_domain_mailbox_alias>")
+				fmt.Println("Example: signup alice@earth.com earth")
+				break
+			}
+			email := parts[1]
+			domainAlias := parts[2]
+			mailboxConfig, ok := cfg.Mailboxes[getDomainFromEmail(email)]
+			if !ok || mailboxConfig.Domain != domainAlias {
+				fmt.Printf("Error: Mailbox configuration for domain '%s' (alias '%s') not found in config.json.\n", getDomainFromEmail(email), domainAlias)
+				break
+			}
+			log.Printf("Attempting to sign up %s with mailbox at %s (Nameserver: %s)", email, mailboxConfig.Addr, cfg.NameserverAddr)
+			// Call the mailbox's registration function
+			mailbox.RegisterMailboxWithNameserver(cfg.NameserverAddr, email, mailboxConfig.Addr)
+			fmt.Printf("Signup attempt for %s completed. You can now try to login.\n", email)
+
+		case "login":
+			if len(parts) != 2 {
+				fmt.Println("Usage: login <your_email>")
+				fmt.Println("Example: login alice@earth.com")
+				break
+			}
+			email := parts[1]
+			mailboxConfig, ok := cfg.Mailboxes[getDomainFromEmail(email)]
+			if !ok {
+				fmt.Printf("Error: Mailbox configuration for domain '%s' not found in config.json. Please signup first.\n", getDomainFromEmail(email))
+				break
+			}
+			currentState.EmailAddress = email
+			currentState.MailboxAddress = mailboxConfig.Addr
+			fmt.Printf("Logged in as: %s\n", currentState.EmailAddress)
+
+		case "send":
+			if currentState.EmailAddress == "" {
+				fmt.Println("Error: Please log in first using the 'login' command.")
+				break
+			}
+			if len(parts) < 4 {
+				fmt.Println("Usage: send <recipient_email> <subject> <body_text>")
+				fmt.Println("Example: send bob@saturn.com 'Meeting' 'Let's meet tomorrow.'")
+				break
+			}
+			recipientEmail := parts[1]
+			subject := parts[2]
+			body := strings.Join(parts[3:], " ")
+			SendMail(cfg.TransferServerAddr, currentState.EmailAddress, recipientEmail, subject, body)
+
+		case "get":
+			if currentState.EmailAddress == "" {
+				fmt.Println("Error: Please log in first using the 'login' command.")
+				break
+			}
+			GetMail(currentState.EmailAddress, currentState.MailboxAddress)
+
+		case "whoami":
+			if currentState.EmailAddress == "" {
+				fmt.Println("Not logged in.")
+			} else {
+				fmt.Printf("Currently logged in as: %s (Mailbox: %s)\n", currentState.EmailAddress, currentState.MailboxAddress)
+			}
+
+		case "exit":
+			fmt.Println("Exiting client.")
+			return
+
+		default:
+			fmt.Println("Unknown command. Type 'help' for available commands.")
+		}
+		fmt.Print("> ")
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("Error reading input: %v", err)
+	}
+}
+
+// Helper function to extract domain from an email address
+func getDomainFromEmail(email string) string {
+	parts := strings.Split(email, "@")
+	if len(parts) == 2 {
+		return parts[1]
+	}
+	return "" // Invalid email format
 }
